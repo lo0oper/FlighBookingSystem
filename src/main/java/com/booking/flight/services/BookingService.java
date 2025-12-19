@@ -12,12 +12,14 @@ import com.booking.flight.repository.BookingRepository;
 import com.booking.flight.repository.ScheduleRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j; // <-- NEW IMPORT
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j // <-- Inject the logger
 public class BookingService {
 
     private final BookingRepository bookingRepository;
@@ -37,25 +39,33 @@ public class BookingService {
     @Transactional
     public Booking createBooking(BookingRequest request) {
 
+        log.info("Attempting booking for Schedule ID {} and Seat {}",
+                request.scheduleId(), request.seatNumber());
+
         Schedule schedule = scheduleRepository.findById(request.scheduleId())
-                .orElseThrow(() -> new RuntimeException("Schedule not found")); // Use a proper custom exception
+                .orElseThrow(() -> {
+                    log.warn("Schedule not found with ID: {}", request.scheduleId());
+                    return new RuntimeException("Schedule not found"); // Use a proper custom exception
+                });
 
         // 1. DISTRIBUTED LOCKING ATTEMPT (Aerospike CAS)
         // Key format: scheduleId:seatNumber (e.g., "123:14A")
+        String lockKeyString = request.scheduleId() + ":" + request.seatNumber();
         Key lockKey = new Key(
                 aerospikeConfig.getNamespace(),
                 SEAT_LOCK_SET,
-                request.scheduleId() + ":" + request.seatNumber()
+                lockKeyString
         );
 
         Bin lockBin = new Bin(SEAT_LOCK_BIN, request.userId());
 
         try {
+            log.debug("Attempting to acquire Aerospike lock with key: {}", lockKeyString);
+
             // Attempt to create a record only if it DOES NOT EXIST.
-            // If successful, the user has acquired the lock for 5 minutes (TTL).
             aerospikeClient.put(aerospikeWritePolicy, lockKey, lockBin);
 
-            // Lock Acquired! Proceed to DB persistence.
+            log.info("Aerospike lock successfully acquired for key: {}. Proceeding to DB transaction.", lockKeyString);
 
             // 2. TRANSACTIONAL PERSISTENCE (MariaDB)
             Booking newBooking = new Booking();
@@ -66,24 +76,34 @@ public class BookingService {
             newBooking.setBookingTime(LocalDateTime.now());
 
             Booking savedBooking = bookingRepository.save(newBooking);
+            log.debug("Booking persisted in MariaDB. Booking ID: {}", savedBooking.getBookingId());
+
 
             // 3. CLEANUP: Successfully saved, delete the temporary Aerospike lock.
+            // Using a new WritePolicy here just for clarity/safety, but the default should suffice.
             aerospikeClient.delete(new WritePolicy(), lockKey);
+            log.info("Aerospike lock successfully released for key: {}", lockKeyString);
 
             return savedBooking;
 
         } catch (AerospikeException e) {
             // Error Code 5 (KEY_EXISTS_ERROR) means the lock already exists (seat reserved).
             if (e.getResultCode() == ResultCode.KEY_EXISTS_ERROR) {
+                log.warn("LOCK CONFLICT: Seat {} on schedule {} is already locked/reserved. Lock Key: {}",
+                        request.seatNumber(), request.scheduleId(), lockKeyString);
+
                 throw new SeatAlreadyReservedException("Seat " + request.seatNumber() + " on schedule " + request.scheduleId() + " is currently reserved or locked.");
             }
             // Log other Aerospike errors
+            log.error("Aerospike locking failure for key {}: {}", lockKeyString, e.getMessage(), e);
             throw new RuntimeException("Aerospike locking failure: " + e.getMessage(), e);
 
         } catch (Exception e) {
             // Catch any unexpected DB or other errors.
-            // In a robust system, you might need compensating logic here
-            // to ensure the Aerospike lock is deleted if the DB transaction fails.
+            log.error("Critical error during booking persistence. Lock status is UNCERTAIN for {}. Error: {}",
+                    lockKeyString, e.getMessage(), e);
+
+            // NOTE: In a robust system, compensating logic must attempt to delete the lock here.
             throw new RuntimeException("Booking persistence failed: " + e.getMessage(), e);
         }
     }

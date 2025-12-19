@@ -14,11 +14,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import lombok.extern.slf4j.Slf4j;
 
 @RestController
 // NOTE: Use the plural 'flights' or 'management' for the base path
 @RequestMapping("/api/v1/admin/management")
 @RequiredArgsConstructor
+@Slf4j
 @Tag(name = "Admin Flight Management", description = "Endpoints for creating planes, flights, schedules, and managing routes.")
 public class AdminFlightController {
 

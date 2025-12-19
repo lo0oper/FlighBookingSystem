@@ -7,11 +7,13 @@ import com.booking.flight.models.*;
 import com.booking.flight.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class FlightManagementService {
 
@@ -26,8 +28,12 @@ public class FlightManagementService {
     @Transactional
     public Schedule createSchedule(ScheduleCreationRequest request) {
         // Find the base flight route (e.g., UA123)
+        log.info("Creating schedule for Flight ID {} with price {}", request.flightId(), request.basePrice());
         Flight flight = flightRepository.findById(request.flightId())
-                .orElseThrow(() -> new IllegalArgumentException("Flight route not found with ID: " + request.flightId()));
+                .orElseThrow(() -> {
+                    log.warn("Failed to find Flight route with ID: {}", request.flightId());
+                    return new IllegalArgumentException("Flight route not found with ID: " + request.flightId());
+                });
 
         // Create the specific instance (schedule)
         Schedule schedule = new Schedule();
@@ -36,7 +42,10 @@ public class FlightManagementService {
         schedule.setArrivalTime(request.arrivalTime());
         schedule.setBasePrice(request.basePrice());
 
-        return scheduleRepository.save(schedule);
+        Schedule savedSchedule = scheduleRepository.save(schedule);
+        log.debug("Schedule created successfully. ID: {}", savedSchedule.getScheduleId());
+        return savedSchedule;
+
     }
 
     // ===============================================
@@ -45,25 +54,36 @@ public class FlightManagementService {
     @Transactional
     public Flight reassignPlaneToFlightRoute(Long flightId, Long newPlaneId) {
         // Find the Flight Route entity
-        Flight flight = flightRepository.findById(flightId)
-                .orElseThrow(() -> new IllegalArgumentException("Flight route not found with ID: " + flightId));
+        log.info("Reassigning Plane for Flight ID {} to new Plane ID {}", flightId, newPlaneId);
 
-        // Find the new Plane entity
+        Flight flight = flightRepository.findById(flightId)
+                .orElseThrow(() -> {
+                    log.error("Flight route not found for reassignment: {}", flightId);
+                    return new IllegalArgumentException("Flight route not found with ID: " + flightId);
+                });
+
         Plane newPlane = planeRepository.findById(newPlaneId)
-                .orElseThrow(() -> new IllegalArgumentException("Plane not found with ID: " + newPlaneId));
+                .orElseThrow(() -> {
+                    log.error("New plane model not found: {}", newPlaneId);
+                    return new IllegalArgumentException("Plane not found with ID: " + newPlaneId);
+                });
 
         // Update the Plane associated with the permanent Flight Route
         // This change will apply to all future schedules created for this route.
         flight.setPlane(newPlane);
 
+        Flight updatedFlight = flightRepository.save(flight);
+        log.info("Flight {} successfully reassigned to plane model {}", flight.getFlightNumber(), newPlane.getModel());
         // Save the updated Flight entity
-        return flightRepository.save(flight);
+        return updatedFlight;
     }
 
     // --- Other Admin CRUD methods (included for completeness) ---
 
     @Transactional
     public Flight createFlight(FlightCreationRequest request) {
+        log.info("Creating schedule for Flight ID {} with planeId {}", request.flightNumber(), request.planeId());
+
         Plane plane = planeRepository.findById(request.planeId())
                 .orElseThrow(() -> new IllegalArgumentException("Plane not found with ID: " + request.planeId()));
 
@@ -72,6 +92,7 @@ public class FlightManagementService {
         flight.setDepartureAirport(request.departureAirport());
         flight.setArrivalAirport(request.arrivalAirport());
         flight.setPlane(plane);
+
 
         return flightRepository.save(flight);
     }
@@ -98,10 +119,12 @@ public class FlightManagementService {
 
     @Transactional
     public Plane createPlane(PlaneCreationRequest request) {
+        log.info("Attempting to create new plane model: {}", request.model());
         Plane plane = new Plane();
         plane.setModel(request.model());
         plane.setTotalSeats(request.totalSeats());
-
-        return planeRepository.save(plane);
+        Plane savedPlane = planeRepository.save(plane);
+        log.debug("Plane created successfully with ID: {}", savedPlane.getPlaneId());
+        return savedPlane;
     }
 }
