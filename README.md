@@ -43,3 +43,29 @@ The application will start on `http://localhost:8080`.
 * **POST /api/v1/admin/flights:** Create a new flight (Admin)
 * **POST /api/v1/bookings:** Create a booking (User) - Requires `scheduleId`, `userId`, `seatNumber`.
 * **GET /api/v1/bookings/{id}:** Retrieve booking details.
+
+
+
+## STEPS DONE WHILE BUILDNIG REPO
+1. flight/  <-- THIS IS YOUR ROOT DIRECTORY
+   ├── pom.xml                                     <-- Maven definition
+   ├── Dockerfile                                  <-- Docker build instructions
+   ├── docker-compose.yml                          <-- Docker orchestration
+
+└── src/                                        <-- Source Code Root
+└── main/
+├── java/                               <-- Java Code Root
+│   └── com/
+│       └── booking/
+│           └── flight/
+│               ├── FlightBookingSystemApplication.java <-- Main Class
+│               ├── config/             <-- DB/Aerospike Config
+│               ├── controller/         <-- REST Endpoints (Admin & User)
+│               ├── dto/                <-- Request/Response DTOs
+│               ├── exception/          <-- Custom Exceptions
+│               ├── model/              <-- JPA Entities (Booking, Flight, etc.)
+│               ├── repository/         <-- Spring Data JPA Repositories
+│               └── service/            <-- Business Logic (BookingService, FlightManagementService)
+│
+└── resources/                          <-- Configuration Root
+└── application.properties          <-- Spring Boot/DB/Aerospike Settings
