@@ -1,4 +1,4 @@
-package com.booking.flight.config.localConfig.aeroSpikeConfig;
+package com.booking.flight.config.aeroSpikeConfig;
 
 import com.aerospike.client.*;
 import com.aerospike.client.policy.ClientPolicy;
