@@ -1,15 +1,11 @@
 package com.booking.flight.models;
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Column;
+import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.util.HashSet;
+import java.util.Set;
 
 @Entity
 @Data
@@ -35,4 +31,25 @@ public class Flight {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "planeId", nullable = false)
     private Plane plane;
+
+
+    // ==========================================================
+    // **CRITICAL FIX: Define the Schedules collection field**
+    // This allows Hibernate to track the relationship and Lombok
+    // to generate the working getSchedules() method.
+    // ==========================================================
+    @OneToMany(mappedBy = "flight", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private Set<Schedule> schedules = new HashSet<>();
+
+    // If you are using @AllArgsConstructor, you need a custom constructor
+    // that omits the 'schedules' field for DTO mapping convenience:
+    public Flight(Long flightId, String flightNumber, String departureAirport,
+                  String arrivalAirport, Plane plane) {
+        this.flightId = flightId;
+        this.flightNumber = flightNumber;
+        this.departureAirport = departureAirport;
+        this.arrivalAirport = arrivalAirport;
+        this.plane = plane;
+    }
+
 }
