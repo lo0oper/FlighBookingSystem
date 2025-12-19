@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
 
 @Service
 @RequiredArgsConstructor
-@Slf4j // <-- Inject the logger
+@Slf4j
 public class BookingService {
 
     private final BookingRepository bookingRepository;
