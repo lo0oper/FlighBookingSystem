@@ -1,0 +1,70 @@
+services:
+  # --- 1. MariaDB Service ---
+  mariadb:
+    image: mariadb:latest
+    container_name: flight-mariadb
+    environment:
+      # Required environment variables for MariaDB setup
+      MARIADB_ROOT_PASSWORD: 12341234
+      MARIADB_DATABASE: flight_booking_db
+      MARIADB_USER: root
+      MARIADB_PASSWORD: 12341234
+    ports:
+      # Expose the standard MariaDB port (3306) to your host machine
+      - "3306:3306"
+    volumes:
+      # Persist data so it survives container restarts
+      - mariadb_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mariadb-admin", "ping", "-h", "localhost"]
+      timeout: 10s
+      retries: 5
+      interval: 5s
+    restart: always
+
+  # --- 2. Aerospike Service ---
+  aerospike:
+    image: aerospike/aerospike-server:latest
+    container_name: flight-aerospike
+    ports:
+      # Expose the standard Aerospike client port (3000)
+      - "3000:3000"
+    volumes:
+      # Persist configuration and data if necessary (optional for dev)
+      - aerospike_data:/opt/aerospike/data
+    healthcheck:
+      test: ["CMD", "asinfo", "-v", "status"]
+      timeout: 10s
+      retries: 5
+      interval: 5s
+    restart: always
+
+  # --- 3. Your Spring Boot Application Service (Optional, but recommended) ---
+  app:
+    build:
+      # *** CORRECTION: Context should be the current root directory where pom.xml is located. ***
+      context: .
+      dockerfile: Dockerfile
+    container_name: flight-booking-app
+    ports:
+      # Expose your application's port (8080)
+      - "8080:8080"
+    environment:
+      # Configuration for the Spring Boot application to connect to the databases
+      SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/flight_booking_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: 12341234
+      AEROSPIKE_HOST: aerospike
+      AEROSPIKE_PORT: 3000
+    depends_on:
+      # Ensure databases are healthy before starting the application
+      mariadb:
+        condition: service_healthy
+      aerospike:
+        condition: service_healthy
+    restart: on-failure
+
+# --- Define named volumes for persistence ---
+volumes:
+  mariadb_data:
+  aerospike_data:
