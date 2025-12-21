@@ -3,6 +3,9 @@ package com.booking.flight.controller;
 import com.booking.flight.dto.PlaneCreationRequest; // <-- NEW IMPORT
 import com.booking.flight.dto.FlightCreationRequest; // <-- REQUIRED DTO FOR FLIGHT CREATION
 import com.booking.flight.dto.ScheduleCreationRequest;
+import com.booking.flight.dto.response.FlightResponse;
+import com.booking.flight.dto.response.PlaneResponse;
+import com.booking.flight.dto.response.ScheduleResponse;
 import com.booking.flight.models.Plane; // <-- NEW IMPORT
 import com.booking.flight.models.Flight;
 import com.booking.flight.models.Schedule;
@@ -33,9 +36,9 @@ public class AdminFlightController {
     // ========================================================
     @PostMapping("/planes")
     @Operation(summary = "Create a new Plane model", description = "Defines a new aircraft type with its total seat capacity.")
-    public ResponseEntity<Plane> createPlane(@Valid @RequestBody PlaneCreationRequest request) {
-        Plane plane = managementService.createPlane(request);
-        return new ResponseEntity<>(plane, HttpStatus.CREATED);
+    public ResponseEntity<PlaneResponse> createPlane(@Valid @RequestBody PlaneCreationRequest request) {
+        PlaneResponse planeResponse = managementService.createPlane(request);
+        return new ResponseEntity<>(planeResponse, HttpStatus.CREATED);
     }
 
     // ========================================================
@@ -46,9 +49,9 @@ public class AdminFlightController {
     @PostMapping("/flights")
     @Operation(summary = "Reassign Plane Model to Flight Route",
                description = "Updates the aircraft model used for all future schedules of a permanent flight route.")
-    public ResponseEntity<Flight> createFlight(@Valid @RequestBody FlightCreationRequest request) {
-        Flight flight = managementService.createFlight(request);
-        return new ResponseEntity<>(flight, HttpStatus.CREATED);
+    public ResponseEntity<FlightResponse> createFlight(@Valid @RequestBody FlightCreationRequest request) {
+        FlightResponse flightResponse = managementService.createFlight(request);
+        return new ResponseEntity<>(flightResponse, HttpStatus.CREATED);
     }
 
 
@@ -57,9 +60,9 @@ public class AdminFlightController {
     // POST /api/v1/admin/management/schedules
     // ========================================================
     @PostMapping("/schedules")
-    public ResponseEntity<Schedule> createSchedule(@Valid @RequestBody ScheduleCreationRequest request) {
-        Schedule schedule = managementService.createSchedule(request);
-        return new ResponseEntity<>(schedule, HttpStatus.CREATED);
+    public ResponseEntity<ScheduleResponse> createSchedule(@RequestBody ScheduleCreationRequest request) {        ScheduleResponse schedule = managementService.createSchedule(request);
+        ScheduleResponse response = managementService.createSchedule(request);
+        return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     // ========================================================
@@ -70,11 +73,11 @@ public class AdminFlightController {
      * API to match the planes to the flight route (which applies to all future schedules).
      */
     @PutMapping("/flights/{flightId}/plane/{newPlaneId}")
-    public ResponseEntity<Flight> reassignPlane(
+    public ResponseEntity<FlightResponse> reassignPlane(
             @PathVariable Long flightId,
             @PathVariable Long newPlaneId) {
 
-        Flight updatedFlight = managementService.reassignPlaneToFlightRoute(flightId, newPlaneId);
+        FlightResponse updatedFlight = managementService.reassignPlaneToFlightRoute(flightId, newPlaneId);
         return ResponseEntity.ok(updatedFlight);
     }
 }

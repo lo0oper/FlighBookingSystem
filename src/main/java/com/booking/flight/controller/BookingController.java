@@ -1,6 +1,7 @@
 package com.booking.flight.controller;
 
 import com.booking.flight.dto.BookingRequest;
+import com.booking.flight.dto.response.BookingResponse;
 import com.booking.flight.models.Booking;
 import com.booking.flight.services.BookingService;
 import jakarta.validation.Valid;
@@ -22,11 +23,10 @@ public class BookingController {
     private final BookingService bookingService;
 
     @PostMapping
-    public ResponseEntity<List<Booking>> createBooking(
-            @Valid @RequestBody BookingRequest request) {
+    public ResponseEntity<List<BookingResponse>> createBookings(@RequestBody BookingRequest request) {
 
         // Change the service call and return type
-        List<Booking> bookings = bookingService.createMultipleBookings(request);
+        List<BookingResponse> bookings = bookingService.createMultipleBookings(request);
 
         // Returns 201 CREATED with the list of newly created bookings
         return new ResponseEntity<>(bookings, HttpStatus.CREATED);

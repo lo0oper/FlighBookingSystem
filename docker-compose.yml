@@ -27,11 +27,11 @@ services:
     image: aerospike/aerospike-server:latest
     container_name: flight-aerospike
     ports:
-      # Expose the standard Aerospike client port (3000)
       - "3000:3000"
     volumes:
-      # Persist configuration and data if necessary (optional for dev)
+      - ./aerospike.conf:/etc/aerospike/aerospike.conf
       - aerospike_data:/opt/aerospike/data
+#    command: ["/usr/bin/asd", "--foreground", "--config-file", "/etc/aerospike/aerospike.conf"]
     healthcheck:
       test: ["CMD", "asinfo", "-v", "status"]
       timeout: 10s

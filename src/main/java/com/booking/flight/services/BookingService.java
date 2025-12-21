@@ -5,6 +5,7 @@ import com.aerospike.client.*;
 import com.aerospike.client.policy.WritePolicy;
 import com.booking.flight.config.aeroSpikeConfig.AerospikeConfiguration;
 import com.booking.flight.dto.BookingRequest;
+import com.booking.flight.dto.response.BookingResponse;
 import com.booking.flight.exception.AerospikeLockFailureException;
 import com.booking.flight.exception.BookingPersistenceException;
 import com.booking.flight.exception.ScheduleNotFoundException;
@@ -22,6 +23,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -38,7 +40,7 @@ public class BookingService {
     private static final String SEAT_LOCK_BIN = "user_id";
 
     @Transactional
-    public List<Booking> createMultipleBookings(BookingRequest request) {
+    public List<BookingResponse> createMultipleBookings(BookingRequest request) {
 
         log.info("Attempting multiple seat booking for Schedule ID {} and {} seats by User ID {}",
                 request.scheduleId(), request.seatNumbers().size(), request.userId());
@@ -98,7 +100,11 @@ public class BookingService {
             // 3. CLEANUP: Successfully saved, delete all temporary Aerospike locks.
             releaseLocks(request.scheduleId(), request.seatNumbers());
 
-            return savedBookings;
+            // 4. FIX: CONVERT ENTITIES TO DTOS BEFORE RETURNING
+            return savedBookings.stream()
+                    // Call the static method directly from the DTO class
+                    .map(BookingResponse::fromEntity)
+                    .collect(Collectors.toList());
 
         }catch (AerospikeException e) {
             // Error Code 5 (KEY_EXISTS_ERROR) means one of the seats was already locked.

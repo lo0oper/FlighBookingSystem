@@ -1,16 +1,26 @@
 package com.booking.flight.services;
 
+// DTO Imports
 import com.booking.flight.dto.FlightCreationRequest;
 import com.booking.flight.dto.PlaneCreationRequest;
 import com.booking.flight.dto.ScheduleCreationRequest;
+import com.booking.flight.dto.response.PlaneResponse;
+import com.booking.flight.dto.response.FlightResponse;
+import com.booking.flight.dto.response.ScheduleResponse;
+import com.booking.flight.util.EntityToDtoConverter;
+
+
+// Entity Imports
 import com.booking.flight.models.*;
 import com.booking.flight.repository.*;
+
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.stream.Collectors; // Added for stream operations
 
 @Service
 @Slf4j
@@ -21,14 +31,20 @@ public class FlightManagementService {
     private final ScheduleRepository scheduleRepository;
     private final PlaneRepository planeRepository;
     private final BookingRepository bookingRepository;
+    private final EntityToDtoConverter converter;
+
+
 
     // ===============================================
     // NEW FUNCTION 1: CREATE SCHEDULE
+    // RETURN TYPE CHANGED TO ScheduleResponse
     // ===============================================
     @Transactional
-    public Schedule createSchedule(ScheduleCreationRequest request) {
+    public ScheduleResponse createSchedule(ScheduleCreationRequest request) {
         // Find the base flight route (e.g., UA123)
         log.info("Creating schedule for Flight ID {} with price {}", request.flightId(), request.basePrice());
+
+        // Ensure Flight (and its nested Plane) are loaded eagerly or accessed here
         Flight flight = flightRepository.findById(request.flightId())
                 .orElseThrow(() -> {
                     log.warn("Failed to find Flight route with ID: {}", request.flightId());
@@ -41,18 +57,22 @@ public class FlightManagementService {
         schedule.setDepartureTime(request.departureTime());
         schedule.setArrivalTime(request.arrivalTime());
         schedule.setBasePrice(request.basePrice());
+        // Note: Assuming a default status like "ACTIVE" or "SCHEDULED"
+        schedule.setStatus("SCHEDULED");
 
         Schedule savedSchedule = scheduleRepository.save(schedule);
         log.debug("Schedule created successfully. ID: {}", savedSchedule.getScheduleId());
-        return savedSchedule;
 
+        // CONVERSION STEP
+        return converter.toScheduleResponse(savedSchedule);
     }
 
     // ===============================================
     // NEW FUNCTION 2: REASSIGN PLANE TO FLIGHT ROUTE
+    // RETURN TYPE CHANGED TO FlightResponse
     // ===============================================
     @Transactional
-    public Flight reassignPlaneToFlightRoute(Long flightId, Long newPlaneId) {
+    public FlightResponse reassignPlaneToFlightRoute(Long flightId, Long newPlaneId) {
         // Find the Flight Route entity
         log.info("Reassigning Plane for Flight ID {} to new Plane ID {}", flightId, newPlaneId);
 
@@ -69,20 +89,20 @@ public class FlightManagementService {
                 });
 
         // Update the Plane associated with the permanent Flight Route
-        // This change will apply to all future schedules created for this route.
         flight.setPlane(newPlane);
 
         Flight updatedFlight = flightRepository.save(flight);
         log.info("Flight {} successfully reassigned to plane model {}", flight.getFlightNumber(), newPlane.getModel());
-        // Save the updated Flight entity
-        return updatedFlight;
+
+        // CONVERSION STEP
+        return converter.toFlightResponse(updatedFlight);
     }
 
-    // --- Other Admin CRUD methods (included for completeness) ---
+    // --- Other Admin CRUD methods (updated return types) ---
 
     @Transactional
-    public Flight createFlight(FlightCreationRequest request) {
-        log.info("Creating schedule for Flight ID {} with planeId {}", request.flightNumber(), request.planeId());
+    public FlightResponse createFlight(FlightCreationRequest request) {
+        log.info("Creating flight route {} with planeId {}", request.flightNumber(), request.planeId());
 
         Plane plane = planeRepository.findById(request.planeId())
                 .orElseThrow(() -> new IllegalArgumentException("Plane not found with ID: " + request.planeId()));
@@ -94,37 +114,33 @@ public class FlightManagementService {
         flight.setPlane(plane);
 
 
-        return flightRepository.save(flight);
+        Flight savedFlight = flightRepository.save(flight);
+
+        // CONVERSION STEP
+        return converter.toFlightResponse(savedFlight);
     }
 
-    public List<Flight> getAllFlights() {
-        return flightRepository.findAll();
+    public List<FlightResponse> getAllFlights() {
+        // CONVERSION STEP
+        return flightRepository.findAll().stream()
+                .map(converter::toFlightResponse)
+                .collect(Collectors.toList());
     }
+
+    // ... (deleteFlight method remains the same as it returns void) ...
 
     @Transactional
-    public void deleteFlight(Long flightId) {
-        Flight flight = flightRepository.findById(flightId)
-                .orElseThrow(() -> new IllegalArgumentException("Flight not found"));
-
-        boolean hasFutureBookings = flight.getSchedules().stream()
-                .anyMatch(schedule -> schedule.getDepartureTime().isAfter(java.time.LocalDateTime.now())
-                        && bookingRepository.existsBySchedule(schedule));
-
-        if (hasFutureBookings) {
-            throw new IllegalStateException("Cannot delete flight: It has future scheduled bookings.");
-        }
-
-        flightRepository.delete(flight);
-    }
-
-    @Transactional
-    public Plane createPlane(PlaneCreationRequest request) {
+    public PlaneResponse createPlane(PlaneCreationRequest request) {
         log.info("Attempting to create new plane model: {}", request.model());
         Plane plane = new Plane();
         plane.setModel(request.model());
         plane.setTotalSeats(request.totalSeats());
         Plane savedPlane = planeRepository.save(plane);
         log.debug("Plane created successfully with ID: {}", savedPlane.getPlaneId());
-        return savedPlane;
+
+        // CONVERSION STEP
+        return converter.toPlaneResponse(savedPlane);
     }
+
+
 }

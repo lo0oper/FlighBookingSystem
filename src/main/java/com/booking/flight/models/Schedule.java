@@ -1,4 +1,5 @@
 package com.booking.flight.models;
+
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -25,7 +26,6 @@ public class Schedule {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long scheduleId;
 
-    //TODO what is LAZY here? what is ManyToOne?
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "flightId", nullable = false)
     private Flight flight;
@@ -39,8 +39,11 @@ public class Schedule {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal basePrice;
 
+    // Added to align with scheduling logic and DTO structure
+    @Column(nullable = false, length = 20)
+    private String status;
+
     // Calculated field, potentially stored in Aerospike for speed
-    //TODO: What is Transient here?
     @Transient
     private Integer availableSeats;
 }

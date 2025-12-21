@@ -4,6 +4,7 @@ import com.aerospike.client.*;
 import com.aerospike.client.policy.WritePolicy;
 import com.booking.flight.config.aeroSpikeConfig.AerospikeConfiguration;
 import com.booking.flight.dto.BookingRequest;
+import com.booking.flight.dto.response.BookingResponse;
 import com.booking.flight.exception.AerospikeLockFailureException;
 import com.booking.flight.exception.BookingPersistenceException;
 import com.booking.flight.exception.ScheduleNotFoundException;
@@ -98,7 +99,7 @@ public class BookingServiceTest {
         when(bookingRepository.saveAll(any(List.class))).thenReturn(mockSavedBookings);
 
         // WHEN: Calling the service method
-        List<Booking> result = bookingService.createMultipleBookings(validRequestTwoSeats);
+        List<BookingResponse> result = bookingService.createMultipleBookings(validRequestTwoSeats);
 
         // THEN:
         assertNotNull(result);
@@ -251,12 +252,12 @@ public class BookingServiceTest {
         when(bookingRepository.saveAll(any(List.class))).thenReturn(Collections.singletonList(singleBooking));
 
         // WHEN
-        List<Booking> result = bookingService.createMultipleBookings(singleSeatRequest);
+        List<BookingResponse> result = bookingService.createMultipleBookings(singleSeatRequest);
 
         // THEN
         assertNotNull(result);
         assertEquals(1, result.size());
-        assertEquals("B01", result.get(0).getSeatNumber());
+        assertEquals("B01", result.get(0).seatNumber());
 
         // Verify only one lock acquired and one lock released
         verify(aerospikeClient, times(1)).put(eq(aerospikeWritePolicy), eq(new Key(NAMESPACE, SEAT_LOCK_SET, "100:B01")), any(Bin.class));
@@ -275,7 +276,7 @@ public class BookingServiceTest {
         when(bookingRepository.saveAll(any())).thenReturn(Collections.emptyList());
 
         // WHEN
-        List<Booking> result = bookingService.createMultipleBookings(emptyRequest);
+        List<BookingResponse> result = bookingService.createMultipleBookings(emptyRequest);
 
         // THEN
         assertNotNull(result);
