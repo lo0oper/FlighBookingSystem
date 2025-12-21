@@ -28,16 +28,18 @@ services:
     container_name: flight-aerospike
     ports:
       - "3000:3000"
+    environment:
+      # Tell the entrypoint script to use this specific configuration file path
+      CONFIG_FILE: /etc/aerospike/aerospike.conf
+      # Optional, but helps ensure connectivity:
+      AEROSPIKE_SERVICE_ADDRESS: 0.0.0.0
     volumes:
+      # Mount the custom config file under a custom name/path
       - ./aerospike.conf:/etc/aerospike/aerospike.conf
+      # Keep the data volume mount
       - aerospike_data:/opt/aerospike/data
-#    command: ["/usr/bin/asd", "--foreground", "--config-file", "/etc/aerospike/aerospike.conf"]
     healthcheck:
-      test: ["CMD", "asinfo", "-v", "status"]
-      timeout: 10s
-      retries: 5
-      interval: 5s
-    restart: always
+      test: [ "CMD", "asinfo", "-v", "status" ]
 
   # --- 3. Your Spring Boot Application Service (Optional, but recommended) ---
   app:

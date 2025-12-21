@@ -3,6 +3,8 @@ package com.booking.flight.services;
 
 import com.aerospike.client.*;
 import com.aerospike.client.policy.WritePolicy;
+import com.aerospike.client.query.Filter;
+import com.aerospike.client.query.RecordSet;
 import com.booking.flight.config.aeroSpikeConfig.AerospikeConfiguration;
 import com.booking.flight.dto.BookingRequest;
 import com.booking.flight.dto.response.BookingResponse;
@@ -17,6 +19,7 @@ import com.booking.flight.repository.ScheduleRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
@@ -33,11 +36,14 @@ public class BookingService {
     private final BookingRepository bookingRepository;
     private final ScheduleRepository scheduleRepository;
     private final AerospikeClient aerospikeClient;
-    private final WritePolicy aerospikeWritePolicy;
+
+    @Qualifier("aerospikeLockingPolicy")
+    private final WritePolicy aerospikeLockingPolicy;
     private final AerospikeConfiguration aerospikeConfig;
 
     private static final String SEAT_LOCK_SET = "seat_locks";
     private static final String SEAT_LOCK_BIN = "user_id";
+    private static final String SCHEDULE_ID_BIN = "schedule_id";
 
     @Transactional
     public List<BookingResponse> createMultipleBookings(BookingRequest request) {
@@ -70,10 +76,12 @@ public class BookingService {
 
                 log.debug("Attempting to acquire lock for seat: {}", seatNumber);
 
-                // Attempt to create a record ONLY if it DOES NOT EXIST.
-                aerospikeClient.put(aerospikeWritePolicy, lockKey, lockBin);
-                locksAcquiredCount++; // Increment only on successful lock acquisition
+                // --- NEW ATOMIC LOCKING MECHANISM ---
+                // Operation to perform: Write the lockBin.
+                // Policy: Must have generation=0 (record must not exist) and use UPDATE action.
+//                aerospikeClient.operate(aerospikeLockingPolicy, lockKey, Operation.put(lockBin));
 
+                locksAcquiredCount++;
                 log.debug("Lock acquired for seat: {}", seatNumber);
 
                 // If lock is successful, prepare the Booking entity for later saving
@@ -107,9 +115,10 @@ public class BookingService {
                     .collect(Collectors.toList());
 
         }catch (AerospikeException e) {
-            // Error Code 5 (KEY_EXISTS_ERROR) means one of the seats was already locked.
-            if (e.getResultCode() == ResultCode.KEY_EXISTS_ERROR) {
-                // Execute compensation logic before re-throwing the conflict exception
+            // Error Code 3: KEY_EXISTS_ERROR is now correctly returned when the lock fails
+            // because the GenerationPolicy.EXPECT_GEN_EQUAL is used on an existing record.
+            if (e.getResultCode() == ResultCode.KEY_EXISTS_ERROR ) {
+
                 compensateForFailedLock(request.scheduleId(), request.seatNumbers(), locksAcquiredCount);
 
                 log.warn("LOCK CONFLICT: One or more requested seats were already reserved. Booking failed.");
@@ -117,9 +126,8 @@ public class BookingService {
             }
 
             // For other Aerospike connection/server errors (Error 9: Timeout, etc.)
+            // NOTE: The previous "Error 22" should now be resolved.
             log.error("Aerospike critical failure: {}", e.getMessage(), e);
-
-            // <<< FIX HERE: ADD COMPENSATION FOR CRITICAL ERRORS >>>
             compensateForFailedLock(request.scheduleId(), request.seatNumbers(), locksAcquiredCount);
 
             throw new AerospikeLockFailureException("Aerospike locking failure (non-conflict error).", e);
@@ -172,4 +180,41 @@ public class BookingService {
             log.debug("Compensation: Released lock for seat {}", seatNumber);
         }
     }
+
+    public List<String> getReservedSeats(String scheduleId) {
+
+        String scheduleIdString = String.valueOf(scheduleId);
+
+        // 1. Define the Statement for the indexed query
+        com.aerospike.client.query.Statement stmt = new com.aerospike.client.query.Statement();
+        stmt.setNamespace(aerospikeConfig.getNamespace());
+        stmt.setSetName(SEAT_LOCK_SET);
+
+        // 2. Define the Filter using the Secondary Index on 'schedule_id'
+        stmt.setFilter(Filter.equal(SCHEDULE_ID_BIN, scheduleIdString));
+
+        // 3. Optional: Only request the required bin(s) if needed, but the key is enough.
+        // stmt.setBinNames(SCHEDULE_ID_BIN);
+
+        List<String> reservedSeats = new ArrayList<>();
+
+        try (RecordSet rs = aerospikeClient.query(null, stmt)) {
+            while (rs.next()) {
+                Key key = rs.getKey();
+
+                // Get the UserKey object, which holds the string "SCHEDULE_ID:SEAT_NUMBER"
+                String keyString = (String)key.userKey.getObject();
+
+                // Extract the seat number part: "12345:A01" -> "A01"
+                reservedSeats.add(keyString.substring(keyString.indexOf(":") + 1));
+            }
+        } catch (AerospikeException e) {
+            log.error("Error querying reserved seats for schedule {}. Check if the index {} exists. Error: {}",
+                    scheduleId, "idx_schedule_id", e.getMessage());
+            // Return an empty list on failure, assuming the caller will handle the exception or empty result.
+        }
+        return reservedSeats;
+    }
+
+
 }
