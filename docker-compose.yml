@@ -49,6 +49,7 @@ services:
     ports:
       # Expose your application's port (8080)
       - "8080:8080"
+      - "8050:8050"
     environment:
       # Configuration for the Spring Boot application to connect to the databases
       SPRING_DATASOURCE_URL: jdbc:mariadb://mariadb:3306/flight_booking_db

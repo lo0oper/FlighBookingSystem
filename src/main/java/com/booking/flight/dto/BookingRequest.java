@@ -1,15 +1,18 @@
 package com.booking.flight.dto;
 
-
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import lombok.Builder;
+import java.util.List;
 
-
-@Builder
 public record BookingRequest(
-        @NotNull Long scheduleId,
-        @NotNull Long userId,
-        @NotBlank @Pattern(regexp = "^[0-9]{1,2}[A-F]$") String seatNumber
+
+        @NotNull(message = "Schedule ID is required")
+        Long scheduleId,
+
+        // Changed from a single String to a List of Strings
+        @NotEmpty(message = "At least one seat number is required")
+        List<String> seatNumbers,
+
+        @NotNull(message = "User ID is required for the booking")
+        Long userId
 ) {}

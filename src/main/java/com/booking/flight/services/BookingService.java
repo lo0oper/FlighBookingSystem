@@ -5,6 +5,9 @@ import com.aerospike.client.*;
 import com.aerospike.client.policy.WritePolicy;
 import com.booking.flight.config.aeroSpikeConfig.AerospikeConfiguration;
 import com.booking.flight.dto.BookingRequest;
+import com.booking.flight.exception.AerospikeLockFailureException;
+import com.booking.flight.exception.BookingPersistenceException;
+import com.booking.flight.exception.ScheduleNotFoundException;
 import com.booking.flight.exception.SeatAlreadyReservedException;
 import com.booking.flight.models.Booking;
 import com.booking.flight.models.Schedule;
@@ -12,10 +15,13 @@ import com.booking.flight.repository.BookingRepository;
 import com.booking.flight.repository.ScheduleRepository;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j; // <-- NEW IMPORT
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -31,80 +37,133 @@ public class BookingService {
     private static final String SEAT_LOCK_SET = "seat_locks";
     private static final String SEAT_LOCK_BIN = "user_id";
 
-    /**
-     * Core production-ready method for creating a booking with distributed locking.
-     * This follows a strict Check-And-Set (CAS) flow using Aerospike.
-     * If the Aerospike lock is acquired, the DB transaction proceeds.
-     */
     @Transactional
-    public Booking createBooking(BookingRequest request) {
+    public List<Booking> createMultipleBookings(BookingRequest request) {
 
-        log.info("Attempting booking for Schedule ID {} and Seat {}",
-                request.scheduleId(), request.seatNumber());
+        log.info("Attempting multiple seat booking for Schedule ID {} and {} seats by User ID {}",
+                request.scheduleId(), request.seatNumbers().size(), request.userId());
 
         Schedule schedule = scheduleRepository.findById(request.scheduleId())
                 .orElseThrow(() -> {
                     log.warn("Schedule not found with ID: {}", request.scheduleId());
-                    return new RuntimeException("Schedule not found"); // Use a proper custom exception
+                    // Use the specific custom exception for NOT FOUND
+                    return new ScheduleNotFoundException(request.scheduleId());
                 });
 
-        // 1. DISTRIBUTED LOCKING ATTEMPT (Aerospike CAS)
-        // Key format: scheduleId:seatNumber (e.g., "123:14A")
-        String lockKeyString = request.scheduleId() + ":" + request.seatNumber();
-        Key lockKey = new Key(
-                aerospikeConfig.getNamespace(),
-                SEAT_LOCK_SET,
-                lockKeyString
-        );
+        List<Booking> bookingsToSave = new ArrayList<>();
+        int locksAcquiredCount = 0; // Counter for compensation logic
 
-        Bin lockBin = new Bin(SEAT_LOCK_BIN, request.userId());
-
+        // 1. ITERATE AND ACQUIRE DISTRIBUTED LOCK FOR EACH SEAT
         try {
-            log.debug("Attempting to acquire Aerospike lock with key: {}", lockKeyString);
+            for (String seatNumber : request.seatNumbers()) {
 
-            // Attempt to create a record only if it DOES NOT EXIST.
-            aerospikeClient.put(aerospikeWritePolicy, lockKey, lockBin);
+                String lockKeyString = request.scheduleId() + ":" + seatNumber;
+                Key lockKey = new Key(
+                        aerospikeConfig.getNamespace(),
+                        SEAT_LOCK_SET,
+                        lockKeyString
+                );
 
-            log.info("Aerospike lock successfully acquired for key: {}. Proceeding to DB transaction.", lockKeyString);
+                Bin lockBin = new Bin(SEAT_LOCK_BIN, request.userId());
+
+                log.debug("Attempting to acquire lock for seat: {}", seatNumber);
+
+                // Attempt to create a record ONLY if it DOES NOT EXIST.
+                aerospikeClient.put(aerospikeWritePolicy, lockKey, lockBin);
+                locksAcquiredCount++; // Increment only on successful lock acquisition
+
+                log.debug("Lock acquired for seat: {}", seatNumber);
+
+                // If lock is successful, prepare the Booking entity for later saving
+                Booking newBooking = new Booking();
+                newBooking.setSchedule(schedule);
+                newBooking.setUserId(request.userId());
+                newBooking.setSeatNumber(seatNumber);
+                newBooking.setStatus("CONFIRMED");
+                newBooking.setBookingTime(LocalDateTime.now());
+                bookingsToSave.add(newBooking);
+            }
 
             // 2. TRANSACTIONAL PERSISTENCE (MariaDB)
-            Booking newBooking = new Booking();
-            newBooking.setSchedule(schedule);
-            newBooking.setUserId(request.userId());
-            newBooking.setSeatNumber(request.seatNumber());
-            newBooking.setStatus("CONFIRMED");
-            newBooking.setBookingTime(LocalDateTime.now());
-
-            Booking savedBooking = bookingRepository.save(newBooking);
-            log.debug("Booking persisted in MariaDB. Booking ID: {}", savedBooking.getBookingId());
-
-
-            // 3. CLEANUP: Successfully saved, delete the temporary Aerospike lock.
-            // Using a new WritePolicy here just for clarity/safety, but the default should suffice.
-            aerospikeClient.delete(new WritePolicy(), lockKey);
-            log.info("Aerospike lock successfully released for key: {}", lockKeyString);
-
-            return savedBooking;
-
-        } catch (AerospikeException e) {
-            // Error Code 5 (KEY_EXISTS_ERROR) means the lock already exists (seat reserved).
-            if (e.getResultCode() == ResultCode.KEY_EXISTS_ERROR) {
-                log.warn("LOCK CONFLICT: Seat {} on schedule {} is already locked/reserved. Lock Key: {}",
-                        request.seatNumber(), request.scheduleId(), lockKeyString);
-
-                throw new SeatAlreadyReservedException("Seat " + request.seatNumber() + " on schedule " + request.scheduleId() + " is currently reserved or locked.");
+            List<Booking> savedBookings;
+            try {
+                savedBookings = bookingRepository.saveAll(bookingsToSave);
+            } catch (DataAccessException e) {
+                // Throw specific exception for DB errors
+                throw new BookingPersistenceException("Failed to save bookings to MariaDB.", e);
             }
-            // Log other Aerospike errors
-            log.error("Aerospike locking failure for key {}: {}", lockKeyString, e.getMessage(), e);
-            throw new RuntimeException("Aerospike locking failure: " + e.getMessage(), e);
+
+            log.info("Successfully persisted {} bookings in MariaDB.", savedBookings.size());
+
+            // 3. CLEANUP: Successfully saved, delete all temporary Aerospike locks.
+            releaseLocks(request.scheduleId(), request.seatNumbers());
+
+            return savedBookings;
+
+        }catch (AerospikeException e) {
+            // Error Code 5 (KEY_EXISTS_ERROR) means one of the seats was already locked.
+            if (e.getResultCode() == ResultCode.KEY_EXISTS_ERROR) {
+                // Execute compensation logic before re-throwing the conflict exception
+                compensateForFailedLock(request.scheduleId(), request.seatNumbers(), locksAcquiredCount);
+
+                log.warn("LOCK CONFLICT: One or more requested seats were already reserved. Booking failed.");
+                throw new SeatAlreadyReservedException("One or more requested seats are currently reserved or locked.");
+            }
+
+            // For other Aerospike connection/server errors (Error 9: Timeout, etc.)
+            log.error("Aerospike critical failure: {}", e.getMessage(), e);
+
+            // <<< FIX HERE: ADD COMPENSATION FOR CRITICAL ERRORS >>>
+            compensateForFailedLock(request.scheduleId(), request.seatNumbers(), locksAcquiredCount);
+
+            throw new AerospikeLockFailureException("Aerospike locking failure (non-conflict error).", e);
 
         } catch (Exception e) {
-            // Catch any unexpected DB or other errors.
-            log.error("Critical error during booking persistence. Lock status is UNCERTAIN for {}. Error: {}",
-                    lockKeyString, e.getMessage(), e);
+            // ... existing logic for PersistenceException and RuntimeException ...
+            log.error("Critical error during booking process. Executing lock compensation. Error: {}", e.getMessage(), e);
 
-            // NOTE: In a robust system, compensating logic must attempt to delete the lock here.
-            throw new RuntimeException("Booking persistence failed: " + e.getMessage(), e);
+            // This compensation is now redundant for AerospikeException, but keeps it safe for others.
+            compensateForFailedLock(request.scheduleId(), request.seatNumbers(), locksAcquiredCount);
+
+            if (e instanceof BookingPersistenceException) {
+                throw (BookingPersistenceException) e;
+            }
+            throw new RuntimeException("Unexpected error during booking transaction.", e);
+        }
+    }
+
+    /**
+     * Helper to release all locks post-successful transaction.
+     */
+    private void releaseLocks(Long scheduleId, List<String> seatNumbers) {
+        for (String seatNumber : seatNumbers) {
+            Key lockKey = new Key(
+                    aerospikeConfig.getNamespace(),
+                    SEAT_LOCK_SET,
+                    scheduleId + ":" + seatNumber
+            );
+            aerospikeClient.delete(new WritePolicy(), lockKey);
+            log.debug("Released lock for seat {}", seatNumber);
+        }
+        log.info("Successfully released all {} Aerospike locks.", seatNumbers.size());
+    }
+
+    /**
+     * Compensation logic to delete locks acquired *before* a lock conflict or other error occurred.
+     */
+    private void compensateForFailedLock(Long scheduleId, List<String> requestedSeats, int locksAcquiredCount) {
+        log.warn("Executing compensation: Deleting {} locks acquired before conflict/error.", locksAcquiredCount);
+        // Only delete the locks that were successfully acquired (up to the point of failure)
+        List<String> seatsToUnlock = requestedSeats.subList(0, locksAcquiredCount);
+
+        for (String seatNumber : seatsToUnlock) {
+            Key lockKey = new Key(
+                    aerospikeConfig.getNamespace(),
+                    SEAT_LOCK_SET,
+                    scheduleId + ":" + seatNumber
+            );
+            aerospikeClient.delete(new WritePolicy(), lockKey);
+            log.debug("Compensation: Released lock for seat {}", seatNumber);
         }
     }
 }
