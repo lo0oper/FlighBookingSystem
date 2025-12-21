@@ -8,6 +8,29 @@ A flight booking system that focuses only on the Booking of flights and preparat
 3.  **MariaDB:** A running instance (or use the configured Docker setup).
 4.  **Aerospike:** A running instance (or use the configured Docker setup).
 
+##  Docker  Setup
+You can use Docker Compose to set up MariaDB and Aerospike quickly.
+1. Docker compose file already exists in the root directory named `docker-compose.yml`.
+2. To start the services, run:
+    ```bash
+    docker-compose up -d
+    ```
+   3. This will start MariaDB on port `3306` and Aerospike on port `3000`.      
+   4. Default MariaDB credentials:
+      * Username: `root`
+      * Password: `12341234`
+      * Database: `flight_booking_db`
+      * You can modify these settings in the `docker-compose.yml` file if needed.
+      * Make sure to update the `application.properties` file with the correct credentials if you change them.
+      * Aerospike runs with default settings and does not require authentication by default.
+      * You can access the Aerospike server at `localhost:3000`.
+      * Ensure both services are running before starting the application.
+      * To stop the services, run:
+    ```bash
+    docker-compose down
+    ```
+   
+
 ## 1. Local Database Setup
 
 ### MariaDB
