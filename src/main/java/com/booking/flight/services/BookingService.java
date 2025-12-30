@@ -2,6 +2,8 @@ package com.booking.flight.services;
 
 
 import com.aerospike.client.*;
+import com.aerospike.client.policy.CommitLevel;
+import com.aerospike.client.policy.RecordExistsAction;
 import com.aerospike.client.policy.WritePolicy;
 import com.aerospike.client.query.Filter;
 import com.aerospike.client.query.RecordSet;
@@ -48,7 +50,7 @@ public class BookingService {
     @Transactional
     public List<BookingResponse> createMultipleBookings(BookingRequest request) {
 
-        log.info("Attempting multiple seat booking for Schedule ID {} and {} seats by User ID {}",
+        log.info("Attempting  seat booking for Schedule ID {} and {} seats by User ID {}",
                 request.scheduleId(), request.seatNumbers().size(), request.userId());
 
         Schedule schedule = scheduleRepository.findById(request.scheduleId())
@@ -76,10 +78,7 @@ public class BookingService {
 
                 log.debug("Attempting to acquire lock for seat: {}", seatNumber);
 
-                // --- NEW ATOMIC LOCKING MECHANISM ---
-                // Operation to perform: Write the lockBin.
-                // Policy: Must have generation=0 (record must not exist) and use UPDATE action.
-//                aerospikeClient.operate(aerospikeLockingPolicy, lockKey, Operation.put(lockBin));
+                aerospikeClient.put(aerospikeLockingPolicy, lockKey, lockBin);
 
                 locksAcquiredCount++;
                 log.debug("Lock acquired for seat: {}", seatNumber);
@@ -215,6 +214,35 @@ public class BookingService {
         }
         return reservedSeats;
     }
+
+    public Boolean putDataInAeroSpike(BookingRequest request) {
+
+        log.info("Attempting multiple seat booking for Schedule ID {} and {} seats by User ID {}",
+                request.scheduleId(), request.seatNumbers().size(), request.userId());
+
+        List<Booking> bookingsToSave = new ArrayList<>();
+        int locksAcquiredCount = 0; // Counter for compensation logic
+        String seatNumber = request.seatNumbers().get(0);
+
+        String lockKeyString = request.scheduleId() + ":" + seatNumber;
+        Key lockKey = new Key(
+                aerospikeConfig.getNamespace(),
+                SEAT_LOCK_SET,
+                lockKeyString
+        );
+
+        Bin lockBin = new Bin(SEAT_LOCK_BIN, request.userId());
+
+        log.debug("Attempting to acquire lock for seat: {}", seatNumber);
+
+
+        aerospikeClient.operate(aerospikeLockingPolicy, lockKey, Operation.put(lockBin));
+
+        locksAcquiredCount++;
+        log.debug("Lock acquired for seat: {}", seatNumber);
+
+        return true;
+        }
 
 
 }

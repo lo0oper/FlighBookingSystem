@@ -30,14 +30,18 @@ services:
       - "3000:3000"
     environment:
       # Tell the entrypoint script to use this specific configuration file path
-      CONFIG_FILE: /etc/aerospike/aerospike.conf
+      CONFIG_FILE: /etc/aerospike/aerospike1.conf
       # Optional, but helps ensure connectivity:
       AEROSPIKE_SERVICE_ADDRESS: 0.0.0.0
+      NAMESPACE: flight-booking # using namespace env var, got this from entrypoint.sh file inside aerospike server
+      NSUP_PERIOD: 120
     volumes:
       # Mount the custom config file under a custom name/path
-      - ./aerospike.conf:/etc/aerospike/aerospike.conf
+      - ./aerospike.conf:/etc/aerospike/aerospike1.conf
       # Keep the data volume mount
       - aerospike_data:/opt/aerospike/data
+#    command:
+#      /usr/bin/supervisord --config-file /etc/aerospike/aerospike.conf
     healthcheck:
       test: [ "CMD", "asinfo", "-v", "status" ]
 
