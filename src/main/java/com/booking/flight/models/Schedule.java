@@ -1,20 +1,13 @@
 package com.booking.flight.models;
 
-import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.Column;
-import jakarta.persistence.Transient;
+import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Entity
 @Data
@@ -46,4 +39,12 @@ public class Schedule {
     // Calculated field, potentially stored in Aerospike for speed
     @Transient
     private Integer availableSeats;
+
+    // Map to track seat status: SeatNumber -> Status (e.g., "A01" -> "AVAILABLE")
+    @ElementCollection // For JPA to handle storing a collection/map
+    @CollectionTable(name = "schedule_seat_status", // Creates a join table
+            joinColumns = @JoinColumn(name = "scheduleId"))
+    @MapKeyColumn(name = "seatNumber")
+    @Column(name = "status")
+    private Map<String, String> seatStatuses;
 }

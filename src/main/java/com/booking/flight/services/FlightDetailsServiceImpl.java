@@ -4,6 +4,7 @@ import com.booking.flight.dto.ScheduleSearchRequest;
 import com.booking.flight.dto.response.FlightResponse;
 import com.booking.flight.dto.response.PlaneResponse;
 import com.booking.flight.dto.response.ScheduleResponse;
+import com.booking.flight.dto.response.SeatMapResponse;
 import com.booking.flight.models.Flight;
 import com.booking.flight.models.Plane;
 import com.booking.flight.models.Schedule;
@@ -94,4 +95,32 @@ public class FlightDetailsServiceImpl implements IFlightService {
 
         return converter.toPlaneResponse(plane);
     }
+
+
+    @Transactional
+    public SeatMapResponse getScheduleSeats(Long scheduleId) {
+        log.info("Fetching seat map for Schedule ID {}", scheduleId);
+
+        // Fetch the Schedule entity
+        Schedule schedule = scheduleRepository.findById(scheduleId)
+                .orElseThrow(() -> {
+                    log.warn("Failed to find Schedule with ID: {}", scheduleId);
+                    return new IllegalArgumentException("Schedule not found with ID: " + scheduleId);
+                });
+
+        // The seatStatuses map is loaded when the Schedule entity is loaded,
+        // assuming your JPA configuration handles @ElementCollection properly (it usually does).
+
+        // Convert to the response DTO
+        SeatMapResponse response = new SeatMapResponse();
+        response.setScheduleId(schedule.getScheduleId());
+        response.setSeatStatuses(schedule.getSeatStatuses());
+
+        log.debug("Successfully retrieved {} seat statuses for Schedule ID {}",
+                schedule.getSeatStatuses().size(), scheduleId);
+
+        return response;
+    }
+
+
 }

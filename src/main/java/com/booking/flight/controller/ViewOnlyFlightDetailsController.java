@@ -5,6 +5,7 @@ import com.booking.flight.dto.ScheduleSearchRequest; // <-- DTO for search param
 import com.booking.flight.dto.response.FlightResponse;
 import com.booking.flight.dto.response.PlaneResponse;
 import com.booking.flight.dto.response.ScheduleResponse;
+import com.booking.flight.dto.response.SeatMapResponse;
 import com.booking.flight.services.FlightDetailsServiceImpl;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -71,5 +72,16 @@ public class ViewOnlyFlightDetailsController {
     public ResponseEntity<PlaneResponse> getPlaneById(@PathVariable Long planeId) {
         PlaneResponse plane = flightService.getPlaneById(planeId);
         return ResponseEntity.ok(plane);
+    }
+
+
+    @GetMapping("/schedules/{scheduleId}/seats")
+    public ResponseEntity<SeatMapResponse> getSeats(@PathVariable Long scheduleId) {
+        try {
+            SeatMapResponse seatMap = flightService.getScheduleSeats(scheduleId);
+            return ResponseEntity.ok(seatMap);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.notFound().build();
+        }
     }
 }

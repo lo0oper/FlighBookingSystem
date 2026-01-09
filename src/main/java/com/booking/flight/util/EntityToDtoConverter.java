@@ -53,7 +53,8 @@ public class EntityToDtoConverter {
                 schedule.getDepartureTime(),
                 schedule.getArrivalTime(),
                 schedule.getBasePrice(),
-                schedule.getStatus()
+                schedule.getStatus(),
+                schedule.getSeatStatuses()
         );
     }
 }

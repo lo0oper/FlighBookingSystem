@@ -20,7 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors; // Added for stream operations
+import java.util.stream.IntStream;
 
 @Service
 @Slf4j
@@ -60,11 +62,15 @@ public class FlightManagementService {
         // Note: Assuming a default status like "ACTIVE" or "SCHEDULED"
         schedule.setStatus("SCHEDULED");
 
+        schedule.setSeatStatuses(initializeSeatStatuses(flight.getPlane()));
+        log.debug("Initialized {} seats to 'AVAILABLE' for the new schedule.", flight.getPlane().getTotalSeats());
+
         Schedule savedSchedule = scheduleRepository.save(schedule);
         log.debug("Schedule created successfully. ID: {}", savedSchedule.getScheduleId());
 
         // CONVERSION STEP
         return converter.toScheduleResponse(savedSchedule);
+
     }
 
     // ===============================================
@@ -142,5 +148,22 @@ public class FlightManagementService {
         return converter.toPlaneResponse(savedPlane);
     }
 
+    /**
+     * Generates the initial map of seat statuses for a new schedule.
+     * NOTE: This is a simplified seat generation (e.g., sequential numbering).
+     * Real systems need a complex seat map utility.
+     */
+    private Map<String, String> initializeSeatStatuses(Plane plane) {
+        int totalSeats = plane.getTotalSeats();
+
+
+        // For simplicity, we generate sequential names like "001", "002", etc., up to totalSeats.
+        return IntStream.rangeClosed(1, totalSeats)
+                .mapToObj(i -> String.format("%03d", i)) // Pad to three digits (e.g., "001")
+                .collect(Collectors.toMap(
+                        seatNumber -> seatNumber, // Key is the seat number
+                        seatNumber -> "AVAILABLE" // Value is the initial status
+                ));
+    }
 
 }

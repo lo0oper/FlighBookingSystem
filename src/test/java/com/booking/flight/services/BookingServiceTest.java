@@ -87,7 +87,7 @@ public class BookingServiceTest {
     // --- TEST CASES ---
 
     @Test
-    void createMultipleBookings_Success() {
+    void createBookings_Success() {
         // GIVEN: Schedule exists, Aerospike lock is acquired for both, DB save succeeds.
         when(scheduleRepository.findById(SCHEDULE_ID)).thenReturn(Optional.of(mockSchedule));
 
@@ -99,7 +99,7 @@ public class BookingServiceTest {
         when(bookingRepository.saveAll(any(List.class))).thenReturn(mockSavedBookings);
 
         // WHEN: Calling the service method
-        List<BookingResponse> result = bookingService.createMultipleBookings(validRequestTwoSeats);
+        List<BookingResponse> result = bookingService.createBookings(validRequestTwoSeats);
 
         // THEN:
         assertNotNull(result);
@@ -121,13 +121,13 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createMultipleBookings_ScheduleNotFound() {
+    void createBookings_ScheduleNotFound() {
         // GIVEN: ScheduleRepository returns empty
         when(scheduleRepository.findById(SCHEDULE_ID)).thenReturn(Optional.empty());
 
         // WHEN/THEN: Expect ScheduleNotFoundException
         assertThrows(ScheduleNotFoundException.class, () ->
-                bookingService.createMultipleBookings(validRequestTwoSeats));
+                bookingService.createBookings(validRequestTwoSeats));
 
         // Verify no DB or Aerospike operations occurred
         verify(aerospikeClient, never()).put(any(), any(), any());
@@ -135,7 +135,7 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createMultipleBookings_SeatAlreadyReservedConflict() {
+    void createBookings_SeatAlreadyReservedConflict() {
         when(scheduleRepository.findById(SCHEDULE_ID)).thenReturn(Optional.of(mockSchedule));
 
         // 1. Explicitly stub the success for the first seat (A01)
@@ -152,7 +152,7 @@ public class BookingServiceTest {
 
         // WHEN/THEN: Expect SeatAlreadyReservedException
         assertThrows(SeatAlreadyReservedException.class, () ->
-                bookingService.createMultipleBookings(validRequestTwoSeats));
+                bookingService.createBookings(validRequestTwoSeats));
 
         // Verify COMPENSATION occurred:
         // 1. Put was called successfully for A01
@@ -164,7 +164,7 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createMultipleBookings_AerospikeUnexpectedFailure_CompensationCheck() {
+    void createBookings_AerospikeUnexpectedFailure_CompensationCheck() {
         // ... (Stubbing block remains correct) ...
         when(scheduleRepository.findById(SCHEDULE_ID)).thenReturn(Optional.of(mockSchedule));
 
@@ -179,7 +179,7 @@ public class BookingServiceTest {
 
         // WHEN/THEN: Expect AerospikeLockFailureException
         assertThrows(AerospikeLockFailureException.class, () ->
-                bookingService.createMultipleBookings(validRequestTwoSeats));
+                bookingService.createBookings(validRequestTwoSeats));
 
         // Verify COMPENSATION occurred:
         // 1. Delete (compensation) was called for the lock that WAS acquired (A01).
@@ -194,7 +194,7 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createMultipleBookings_DBPersistenceFailure() {
+    void createBookings_DBPersistenceFailure() {
         // GIVEN: Schedule exists, Aerospike locks are acquired for both seats
         when(scheduleRepository.findById(SCHEDULE_ID)).thenReturn(Optional.of(mockSchedule));
 
@@ -204,7 +204,7 @@ public class BookingServiceTest {
 
         // WHEN/THEN: Expect BookingPersistenceException
         assertThrows(RuntimeException.class, () -> // The service catches DataAccessException and re-throws a RuntimeException wrapper
-                bookingService.createMultipleBookings(validRequestTwoSeats));
+                bookingService.createBookings(validRequestTwoSeats));
 
         // Verify COMPENSATION occurred:
         // 1. Aerospike Puts happened successfully twice
@@ -216,7 +216,7 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createMultipleBookings_DBPersistenceFailure_CompensationCheck() {
+    void createBookings_DBPersistenceFailure_CompensationCheck() {
         // GIVEN: Schedule exists, Aerospike locks are acquired for both seats
         when(scheduleRepository.findById(SCHEDULE_ID)).thenReturn(Optional.of(mockSchedule));
 
@@ -226,7 +226,7 @@ public class BookingServiceTest {
 
         // WHEN/THEN: Expect BookingPersistenceException (our custom wrapper)
         assertThrows(BookingPersistenceException.class, () ->
-                bookingService.createMultipleBookings(validRequestTwoSeats));
+                bookingService.createBookings(validRequestTwoSeats));
 
         // Verify COMPENSATION occurred:
         // 1. Aerospike Puts happened successfully twice (A01, A02)
@@ -252,7 +252,7 @@ public class BookingServiceTest {
         when(bookingRepository.saveAll(any(List.class))).thenReturn(Collections.singletonList(singleBooking));
 
         // WHEN
-        List<BookingResponse> result = bookingService.createMultipleBookings(singleSeatRequest);
+        List<BookingResponse> result = bookingService.createBookings(singleSeatRequest);
 
         // THEN
         assertNotNull(result);
@@ -265,7 +265,7 @@ public class BookingServiceTest {
     }
 
     @Test
-    void createMultipleBookings_EmptySeatsList() {
+    void createBookings_EmptySeatsList() {
         // GIVEN: A request with an empty list of seat numbers
         // Note: Use USER_ID for the user_id field in BookingRequest, not SCHEDULE_ID
         BookingRequest emptyRequest = new BookingRequest( SCHEDULE_ID, Collections.emptyList(),USER_ID);
@@ -276,7 +276,7 @@ public class BookingServiceTest {
         when(bookingRepository.saveAll(any())).thenReturn(Collections.emptyList());
 
         // WHEN
-        List<BookingResponse> result = bookingService.createMultipleBookings(emptyRequest);
+        List<BookingResponse> result = bookingService.createBookings(emptyRequest);
 
         // THEN
         assertNotNull(result);

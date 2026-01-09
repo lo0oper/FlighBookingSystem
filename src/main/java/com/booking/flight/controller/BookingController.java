@@ -2,10 +2,8 @@ package com.booking.flight.controller;
 
 import com.booking.flight.dto.BookingRequest;
 import com.booking.flight.dto.response.BookingResponse;
-import com.booking.flight.models.Booking;
 import com.booking.flight.services.BookingService;
 import io.swagger.v3.oas.annotations.Operation;
-import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,10 +21,7 @@ public class BookingController {
     @PostMapping
     public ResponseEntity<List<BookingResponse>> createBookings(@RequestBody BookingRequest request) {
 
-        // Change the service call and return type
-        List<BookingResponse> bookings = bookingService.createMultipleBookings(request);
-
-        // Returns 201 CREATED with the list of newly created bookings
+        List<BookingResponse> bookings = bookingService.createBookings(request);
         return new ResponseEntity<>(bookings, HttpStatus.CREATED);
     }
 

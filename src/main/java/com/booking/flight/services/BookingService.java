@@ -2,19 +2,15 @@ package com.booking.flight.services;
 
 
 import com.aerospike.client.*;
-import com.aerospike.client.policy.CommitLevel;
-import com.aerospike.client.policy.RecordExistsAction;
 import com.aerospike.client.policy.WritePolicy;
 import com.aerospike.client.query.Filter;
 import com.aerospike.client.query.RecordSet;
 import com.booking.flight.config.aeroSpikeConfig.AerospikeConfiguration;
 import com.booking.flight.dto.BookingRequest;
 import com.booking.flight.dto.response.BookingResponse;
-import com.booking.flight.exception.AerospikeLockFailureException;
-import com.booking.flight.exception.BookingPersistenceException;
-import com.booking.flight.exception.ScheduleNotFoundException;
-import com.booking.flight.exception.SeatAlreadyReservedException;
+import com.booking.flight.exception.*;
 import com.booking.flight.models.Booking;
+import com.booking.flight.models.Flight;
 import com.booking.flight.models.Schedule;
 import com.booking.flight.repository.BookingRepository;
 import com.booking.flight.repository.ScheduleRepository;
@@ -28,6 +24,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -48,7 +45,7 @@ public class BookingService {
     private static final String SCHEDULE_ID_BIN = "schedule_id";
 
     @Transactional
-    public List<BookingResponse> createMultipleBookings(BookingRequest request) {
+    public List<BookingResponse> createBookings(BookingRequest request) {
 
         log.info("Attempting  seat booking for Schedule ID {} and {} seats by User ID {}",
                 request.scheduleId(), request.seatNumbers().size(), request.userId());
@@ -59,6 +56,14 @@ public class BookingService {
                     // Use the specific custom exception for NOT FOUND
                     return new ScheduleNotFoundException(request.scheduleId());
                 });
+
+        // PREVALIDATION: Check seat availability before attempting locks
+        boolean seatsAvailable = areSeatsAvailable(schedule, request.seatNumbers());
+
+        if(!seatsAvailable){
+            log.info("Seats are not available");
+            return new ArrayList<>();
+        }
 
         List<Booking> bookingsToSave = new ArrayList<>();
         int locksAcquiredCount = 0; // Counter for compensation logic
@@ -96,7 +101,17 @@ public class BookingService {
             // 2. TRANSACTIONAL PERSISTENCE (MariaDB)
             List<Booking> savedBookings;
             try {
+                // --- CORE LOGIC: UPDATE SCHEDULE SEAT STATUS TO BOOKED ---
+                Map<String, String> updatedStatuses = schedule.getSeatStatuses();
+                for (String seatNumber : request.seatNumbers()) {
+                    // Set the status to BOOKED for each successfully booked seat
+                    updatedStatuses.put(seatNumber, "BOOKED");
+                }
+                schedule.setSeatStatuses(updatedStatuses); // Set the updated map back
+                scheduleRepository.save(schedule); // Persist the updated seat statuses
                 savedBookings = bookingRepository.saveAll(bookingsToSave);
+
+                log.info("Successfully persisted {} bookings in MariaDB and updated Schedule seat status.", savedBookings.size());
             } catch (DataAccessException e) {
                 // Throw specific exception for DB errors
                 throw new BookingPersistenceException("Failed to save bookings to MariaDB.", e);
@@ -146,6 +161,36 @@ public class BookingService {
     }
 
     /**
+     * Prevalidation check on seat availability before attempting locks.
+     * */
+
+    private boolean areSeatsAvailable(Schedule schedule, List<String> seatNumbers) {
+            // Assuming 'schedule' is retrieved and includes its related 'flight' entity:
+            Flight flight = schedule.getFlight();
+            int totalCapacity = flight.getPlane().getTotalSeats(); // Accesses capacity via the relationship
+
+            // Now, the validation changes:
+            // 1. Check against TOTAL SEATS:
+            if (seatNumbers.size() > totalCapacity) {
+                throw new CapacityExceededException("Requested seats exceed plane capacity.", new RuntimeException());
+            }
+
+            // 2. Check against VALID SEAT NUMBERS:
+            // This assumes your Flight entity (or a related table) defines the list of valid seat numbers (e.g., A01, A02, B01, B02).
+            // You would need to load that valid list (e.g., flight.getValidSeatMap()) for the precise check.
+
+            // 3. Check Persistent Status: (The rest of the logic remains the same)
+            for (String seatNumber : seatNumbers) {
+                // Check if the seat is already permanently BOOKED
+                String currentStatus = schedule.getSeatStatuses().get(seatNumber);
+                if ("BOOKED".equalsIgnoreCase(currentStatus)) {
+                    throw new SeatAlreadyReservedException("Seat " + seatNumber + " is already permanently booked.");
+                }
+            }
+            return true; // All prevalidation checks passed
+    }
+
+    /**
      * Helper to release all locks post-successful transaction.
      */
     private void releaseLocks(Long scheduleId, List<String> seatNumbers) {
@@ -155,7 +200,7 @@ public class BookingService {
                     SEAT_LOCK_SET,
                     scheduleId + ":" + seatNumber
             );
-            aerospikeClient.delete(new WritePolicy(), lockKey);
+            aerospikeClient.delete(aerospikeLockingPolicy, lockKey);
             log.debug("Released lock for seat {}", seatNumber);
         }
         log.info("Successfully released all {} Aerospike locks.", seatNumbers.size());

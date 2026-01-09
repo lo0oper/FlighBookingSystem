@@ -2,6 +2,7 @@ package com.booking.flight.dto.response;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 public record ScheduleResponse(
         Long id,
@@ -9,5 +10,6 @@ public record ScheduleResponse(
         LocalDateTime departureTime,
         LocalDateTime arrivalTime,
         BigDecimal basePrice,
-        String status
+        String status,
+        Map<String, String> seatStatuses // Key: Seat Number, Value: Status
 ) {}
