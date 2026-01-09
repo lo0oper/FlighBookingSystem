@@ -61,6 +61,9 @@ You can use Docker Compose to set up MariaDB and Aerospike quickly.
 
 The application will start on `http://localhost:8080`.
 
+## PENDING:
+- When a flight is booked by a user, its status is not getting updated to UNAVAILABLE in the flight schedule. Only locks are aquired and released, we are not persisting locks for long, since for that comes into picture when payment is to be done, and some users hold on to seats. Right now no holding of seat is being done, as soon as the seat is not booked we release the locks. 
+
 ## 3. API Endpoints
 
 * **POST /api/v1/admin/flights:** Create a new flight (Admin)
